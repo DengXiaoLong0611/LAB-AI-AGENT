@@ -1,0 +1,64 @@
+{
+  "calibration_version": "simulation-v1",
+  "columns": 32,
+  "description": "请执行多轮反馈实验。第一轮必须使用 initial_spec 的均匀4m/s建立基线；随后根据实测误差优先调用 propose_adjustment，再应用 proposed_spec，扫描并分析。目标为四测点8、6.5、5、3.5m/s，每点误差小于0.05m/s，最多8轮。",
+  "device_id": "simulator",
+  "flap": null,
+  "initial_spec": [
+    {
+      "type": "uniform",
+      "value": 4
+    }
+  ],
+  "max_change_mps": 2.0,
+  "max_iterations": 8,
+  "max_seconds": 600.0,
+  "max_speed_mps": 20.0,
+  "mode": "deepseek",
+  "name": "DeepSeek 多轮闭环演示",
+  "points": [
+    {
+      "fan_x": 0,
+      "fan_y": 12,
+      "id": "p1",
+      "target_mps": 8.0,
+      "target_ti": null,
+      "x_mm": 0.0,
+      "y_mm": 0.0
+    },
+    {
+      "fan_x": 8,
+      "fan_y": 12,
+      "id": "p2",
+      "target_mps": 6.5,
+      "target_ti": null,
+      "x_mm": 100.0,
+      "y_mm": 0.0
+    },
+    {
+      "fan_x": 16,
+      "fan_y": 12,
+      "id": "p3",
+      "target_mps": 5.0,
+      "target_ti": null,
+      "x_mm": 200.0,
+      "y_mm": 0.0
+    },
+    {
+      "fan_x": 24,
+      "fan_y": 12,
+      "id": "p4",
+      "target_mps": 3.5,
+      "target_ti": null,
+      "x_mm": 300.0,
+      "y_mm": 0.0
+    }
+  ],
+  "project_id": "deepseek-live-demo-20261105",
+  "rows": 24,
+  "sample_count": 200,
+  "sample_rate_hz": 100.0,
+  "settle_seconds": 0.1,
+  "tolerance_mps": 0.05,
+  "tolerance_ti": 0.03
+}

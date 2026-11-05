@@ -1,0 +1,20 @@
+[project]
+name = "motor-command-agent"
+version = "0.1.0"
+description = "Natural language to validated motor JSON using LangGraph; simulation only"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    "langchain-openai>=1.0,<2",
+    "langgraph>=1.0,<2",
+    "pydantic>=2.10,<3",
+    "python-dotenv>=1.0,<2",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "langgraph-checkpoint-sqlite>=3,<4",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.27,<1"]
+
+[tool.uv]
+package = false

@@ -1,0 +1,59 @@
+{
+  "name": "左高右低风场",
+  "description": "在固定工况下逐点扫描，调整风扇原语以匹配四个测点平均风速。",
+  "project_id": "wind-tunnel",
+  "calibration_version": "simulation-v1",
+  "device_id": "simulator",
+  "mode": "baseline",
+  "rows": 24,
+  "columns": 32,
+  "points": [
+    {
+      "id": "p1",
+      "x_mm": 0.0,
+      "y_mm": 0.0,
+      "fan_x": 0,
+      "fan_y": 12,
+      "target_mps": 8.0,
+      "target_ti": null
+    },
+    {
+      "id": "p2",
+      "x_mm": 100.0,
+      "y_mm": 0.0,
+      "fan_x": 8,
+      "fan_y": 12,
+      "target_mps": 6.5,
+      "target_ti": null
+    },
+    {
+      "id": "p3",
+      "x_mm": 200.0,
+      "y_mm": 0.0,
+      "fan_x": 16,
+      "fan_y": 12,
+      "target_mps": 5.0,
+      "target_ti": null
+    },
+    {
+      "id": "p4",
+      "x_mm": 300.0,
+      "y_mm": 0.0,
+      "fan_x": 24,
+      "fan_y": 12,
+      "target_mps": 3.5,
+      "target_ti": null
+    }
+  ],
+  "initial_spec": null,
+  "flap": null,
+  "tolerance_mps": 0.2,
+  "tolerance_ti": 0.03,
+  "max_iterations": 8,
+  "max_seconds": 600,
+  "max_speed_mps": 20,
+  "max_change_mps": 2,
+  "settle_seconds": 0.1,
+  "sample_rate_hz": 100,
+  "sample_count": 200
+}
