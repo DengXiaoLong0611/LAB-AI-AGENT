@@ -30,7 +30,14 @@ TOOL_GROUPS = {
     "control": ["propose_adjustment"],
 }
 TOOL_DESCRIPTIONS = {
-    "set_fan_field": "按顺序覆盖的物理风速原语，单位 m/s。只设置风扇场，不代替实测。",
+    "set_fan_field": (
+        "设置风扇阵列风场。spec 是原语列表（图层语义，后者覆盖前者），数值为物理风速 m/s。"
+        "阵列 24 行×32 列，行号自底部起：第 0 行是最低处，第 23 行是最高处。"
+        "原语：uniform 全场统一；gradient 沿 x/y 线性渐变（axis=y 时 from 对应第 0 行即底部、to 对应最后一行即顶部）；"
+        "rect/row/column 局部矩形/整行/整列；gaussian 高斯鼓包（叠加在下层之上）；"
+        "profile 一维剖面（power 幂律或 custom 逐值，axis=y 时第 0 行=底部=低风速、末行=顶部=高风速）。"
+        "只设置风场，不代替热线实测。"
+    ),
     "set_flap": "设置翼板静态角度、振幅和频率，完成后返回。",
     "scan_field": "等待流场稳定，按计划移动 XY 探针并采集全部测点。",
     "analyze_field": "读取本轮热线原始数据，计算均值、脉动、湍流度、误差，输出图表。",

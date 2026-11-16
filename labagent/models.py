@@ -5,6 +5,17 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+# ---- 风扇阵列硬件事实（253 档 ↔ 20 m/s，帧固定 24×32=768）----
+MAX_WIND_SPEED_MPS = 20.0   # 风扇可达上限 m/s（253 档对应 20 m/s）
+RAW_MAX = 253               # 档位上限（254/255 被帧头帧尾 0xFE/0xFF 占用）
+FAN_ROWS = 24               # 行数（y 方向，竖直高度）
+FAN_COLS = 32               # 列数（x 方向，水平跨度）
+FAN_ROW_REF_HEIGHT_M = 1.0  # 顶部行(row 23)参考高度；真机实测行号自底部起 row0=物理底部，值占位待标定
+
+# 物理风速：0 ~ 上限（m/s）。所有「风速类」字段复用这份约束。
+Speed = Annotated[float, Field(ge=0.0, le=MAX_WIND_SPEED_MPS)]
+
+
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
@@ -49,7 +60,7 @@ class ExperimentSpec(Contract):
     tolerance_ti: float = Field(default=0.03, gt=0, le=1)
     max_iterations: int = Field(default=8, ge=1, le=100, strict=True)
     max_seconds: float = Field(default=600, gt=0, le=86400)
-    max_speed_mps: float = Field(default=20, gt=0, le=100)
+    max_speed_mps: float = Field(default=MAX_WIND_SPEED_MPS, gt=0, le=MAX_WIND_SPEED_MPS)
     max_change_mps: float = Field(default=2, gt=0, le=20)
     settle_seconds: float = Field(default=0.1, ge=0, le=120)
     sample_rate_hz: float = Field(default=100, gt=0, le=100000)
@@ -71,14 +82,14 @@ class ExperimentSpec(Contract):
 
 class Uniform(Contract):
     type: Literal["uniform"]
-    value: float = Field(ge=0)
+    value: Speed
 
 
 class Gradient(Contract):
     type: Literal["gradient"]
     axis: Literal["x", "y"]
-    start: float = Field(alias="from", ge=0)
-    end: float = Field(alias="to", ge=0)
+    start: Speed = Field(alias="from")
+    end: Speed = Field(alias="to")
 
 
 class Rect(Contract):
@@ -87,43 +98,88 @@ class Rect(Contract):
     y0: int = Field(ge=0, strict=True)
     x1: int = Field(ge=0, strict=True)
     y1: int = Field(ge=0, strict=True)
-    value: float = Field(ge=0)
+    value: Speed
+
+    @model_validator(mode="after")
+    def check_endpoints(self):
+        if self.x0 > self.x1 or self.y0 > self.y1:
+            raise ValueError("rect 端点顺序无效：须 x0≤x1 且 y0≤y1")
+        return self
 
 
 class Row(Contract):
     type: Literal["row"]
     y: int = Field(ge=0, strict=True)
-    value: float = Field(ge=0)
+    value: Speed
 
 
 class Column(Contract):
     type: Literal["column"]
     x: int = Field(ge=0, strict=True)
-    value: float = Field(ge=0)
+    value: Speed
 
 
 class Gaussian(Contract):
+    """叠加语义（局部鼓包）：在全场每个格点加 baseline + amplitude·exp(−d²/(2σ²))。"""
+
     type: Literal["gaussian"]
-    cx: float = Field(ge=0)
-    cy: float = Field(ge=0)
+    cx: int = Field(ge=0, strict=True)
+    cy: int = Field(ge=0, strict=True)
     sigma: float = Field(gt=0)
-    amplitude: float = Field(ge=0)
-    baseline: float = Field(default=0, ge=0)
+    amplitude: Speed
+    baseline: Speed = 0.0
 
 
 class Profile(Contract):
+    """一维剖面。
+
+    law="power"：u(z)=v_ref·(z/z_ref)^alpha，高度 z 来自设备行高映射；
+    law="custom"：直接给每行/列一个风速，长度须等于该轴长度（在 specs.expand_field 校验）。
+    """
+
     type: Literal["profile"]
     axis: Literal["x", "y"]
     law: Literal["power", "custom"]
-    values: list[float] | None = None
-    heights_m: list[float] | None = None
-    alpha: float | None = Field(default=None, ge=0, le=2)
+    alpha: float | None = Field(default=None, gt=0)
     z_ref: float | None = Field(default=None, gt=0)
-    v_ref: float | None = Field(default=None, ge=0)
+    v_ref: Speed | None = None
+    values: list[Speed] | None = None
+
+    @model_validator(mode="after")
+    def check_law(self):
+        if self.law == "power":
+            if self.alpha is None or self.z_ref is None or self.v_ref is None:
+                raise ValueError("law='power' 须提供 alpha、z_ref、v_ref")
+            if self.values is not None:
+                raise ValueError("law='power' 不应提供 values")
+        else:  # custom
+            if self.values is None:
+                raise ValueError("law='custom' 须提供 values")
+            if self.alpha is not None or self.z_ref is not None or self.v_ref is not None:
+                raise ValueError("law='custom' 不应提供 alpha/z_ref/v_ref")
+        return self
+
+
+class Raw(Contract):
+    """逃生门：24×32 档位矩阵（0~253），跳过风速换算，只在设备层叠加。"""
+
+    type: Literal["raw"]
+    matrix: list[list[int]]
+
+    @model_validator(mode="after")
+    def check_matrix(self):
+        if len(self.matrix) != FAN_ROWS:
+            raise ValueError(f"raw matrix 须 {FAN_ROWS} 行")
+        for i, row in enumerate(self.matrix):
+            if len(row) != FAN_COLS:
+                raise ValueError(f"raw matrix 第 {i} 行须 {FAN_COLS} 列")
+            if any(not (0 <= x <= RAW_MAX) for x in row):
+                raise ValueError(f"raw matrix 第 {i} 行存在越界档位（须 0~{RAW_MAX}）")
+        return self
 
 
 Primitive = Annotated[
-    Uniform | Gradient | Rect | Row | Column | Gaussian | Profile,
+    Uniform | Gradient | Rect | Row | Column | Gaussian | Profile | Raw,
     Field(discriminator="type"),
 ]
 
