@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
 from .agent import TOOL_DESCRIPTIONS, TOOL_GROUPS, TOOL_MODELS
+from .inputs import ParseRequest, model_settings, parse_request
 from .models import Contract, ExperimentSpec
 from .runner import ExperimentRunner
 from .specs import expand_field, initial_field
@@ -173,6 +174,16 @@ def create_app(data_dir=None, device_factory=SimulatedDevices, policy_factory=No
     @app.get("/api/tasks")
     def tasks():
         return [task_view(task) for task in store.list_tasks()]
+
+    @app.get("/api/input-models")
+    def input_models():
+        return {kind: {"model": model_settings(kind == "vision")["model"],
+                       "configured": bool(model_settings(kind == "vision")["api_key"])}
+                for kind in ("text", "vision")}
+
+    @app.post("/api/requests/parse")
+    def parse_input(payload: ParseRequest):
+        return parse_request(payload)
 
     @app.post("/api/validate")
     def validate_spec(spec: ExperimentSpec):

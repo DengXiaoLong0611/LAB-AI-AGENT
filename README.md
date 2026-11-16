@@ -1,15 +1,113 @@
-# 电机自然语言控制测试
+# LabAgent 风洞多模态实验工作台
 
-## 单机风洞实验平台
+基于 LangGraph、FastAPI 和 React 的单机风洞实验平台，将文字、表格和图片中的风场需求转换为经过校验的原语 JSON，接入风扇设置、测点扫描、分析和反馈调整流程。
 
-新增的 `labagent/` 提供网页、后台实验、ReAct 工具循环、风场分析和实验记忆。
+## 主要功能
+
+- 多模态输入，支持自然语言、Excel、CSV、TSV 和图片，可同时提交文字与多个附件。
+- 风场解析，识别风速矩阵、坐标与目标风速测点表、说明性表格、风场示意图及剖面图。
+- 网页预览，展示识别说明、假设提示、原语 JSON 与逐单元风速热图，支持应用到实验配置。
+- 实验闭环，提供离线反馈基线和模型 ReAct 决策，记录扫描结果、误差趋势、工具调用和实验产物。
+- 模型配置，默认使用支持图片输入的 `deepseek-flash`，可独立配置文本模型和视觉模型。
+- 设备适配，默认使用模拟器，提供 `WindTunnelDevices` 风扇原语展开、档位换算和串口帧链路。
+
+## 快速开始
+
+需要 Python 3.11–3.14 和 uv。从项目根目录运行。
 
 ```bash
+uv sync --extra test
+cp .env.example .env
+```
+
+在 `.env` 中填写 `DEEPSEEK_API_KEY`，然后启动网页服务。
+
+```bash
+uv run python -m labagent
+```
+
+打开 [本地工作台](http://127.0.0.1:8765)。现有 `.lab-venv` 用户安装新增依赖后也可直接启动。
+
+```bash
+uv pip install --python .lab-venv/bin/python -r pyproject.toml --extra test
 .lab-venv/bin/python -m labagent
 ```
 
-打开 [本地工作台](http://127.0.0.1:8765)。安装、架构图、硬件对接与修改方法见 [开发说明](开发说明/README.md)。
+离线反馈基线与标准表格本地解析可在无 API Key 的环境使用。自然语言、图片和复杂表格的语义解析需要模型接口。
 
+## 多模态风场请求
+
+1. 在“风场实验”的“多模态风场请求”中填写文字或选择附件。
+2. 选择解析模型及矩阵首行对应的位置。
+3. 点击“解析并预览风场”，检查识别说明、假设提示、热图与原语 JSON。
+4. 点击“应用到实验配置”，核对测点、运行预算和误差要求。
+5. 点击“启动实验”，查看执行记录和分析结果，下载实验包。
+
+### 表格输入
+
+| 类型 | 读取方式 |
+|---|---|
+| Excel `.xlsx`、`.xls` | 支持读取多个工作表 |
+| CSV、TSV | 支持常见文本编码及逗号、制表符、分号分隔 |
+| 纯数值风速矩阵 | 行列数与实验配置一致，默认 24×32，数值单位 m/s |
+| 标准测点表 | 使用 `fan_x,fan_y,target_mps` 列名，可附带 `id,x_mm,y_mm,target_ti` |
+| 说明性表格或表格截图 | 结合附带文字由模型进行语义解析 |
+
+单个标准矩阵或标准测点表可直接在本地转换为原语。带文字说明的表格、多工作表和其他布局由模型综合理解。
+
+风扇索引从 0 起，`x` 向右、`y` 向上。矩阵默认第一行对应底部 `y=0`，可在网页切换为顶部优先。标准测点表未指定的风扇单元设为 0 m/s。提供完整 `x_mm,y_mm` 列时导入探针坐标，否则沿用当前测点位置。测点的目标风速按生成风场同步更新。
+
+### 图片与附件限制
+
+- 图片格式支持 PNG、JPEG（`.jpg` / `.jpeg`）、WebP、GIF。
+- 每张图片宽、高均不超过 8192 像素。
+- 一次最多 5 个附件，每个最多 8 MB，合计最多 16 MB。
+- 每份表格最多读取 20,000 个单元格，`.xlsx` 解压后体积最多 40 MB。
+
+可上传风场示意图、风速热图、剖面曲线图和表格截图。建议附上风速单位、标尺和坐标方向，并核对模型给出的假设。
+
+### 模型配置
+
+当前 DeepSeek 官方 `deepseek-flash` 支持图片输入，默认文本与视觉请求都可使用 Flash。网页提供“自动”“文本模型”“视觉模型”选择，自动模式会将包含图片的请求交给视觉模型。[DeepSeek 视觉接口文档](https://api-docs.deepseek.com/guides/vision)
+
+```dotenv
+DEEPSEEK_API_KEY=填写你的密钥
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
+可通过 `TEXT_MODEL`、`TEXT_API_KEY`、`TEXT_BASE_URL` 单独配置文字与表格解析及 ReAct 决策模型，通过 `VISION_MODEL`、`VISION_API_KEY`、`VISION_BASE_URL` 配置视觉模型。留空时继承基础 DeepSeek 配置。自定义服务需兼容 OpenAI Chat Completions 和 JSON 输出，视觉服务需支持 `image_url` 内容块。
+
+完整变量见 [.env.example](.env.example)。本地 `.env` 由程序加载，密钥保存在本机。
+
+## 项目结构
+
+```text
+labagent/
+  inputs.py           多模态附件读取、模型解析与风场配置生成
+  models.py           实验契约、测点与风场原语校验
+  specs.py            原语归一化与物理风速矩阵展开
+  agent.py            离线与模型 ReAct 决策
+  runner.py           实验执行、恢复与预算
+  api.py              网页、解析、任务及下载接口
+  tools/              设备、分析与反馈策略
+  web/                React 网页工作台
+motor/                电机指令解析与模拟协议
+blockchain_experiment_demo/  实验证据上链演示
+开发说明/              安装、架构与硬件对接文档
+```
+
+多模态解析接口为 `POST /api/requests/parse`，返回识别说明、提示、原语、风速矩阵和可应用的实验配置。请求格式与操作细节见 [启动与操作](开发说明/01-启动与操作.md)。其他架构、硬件适配和开发说明见 [开发说明索引](开发说明/README.md)。
+
+## 验证
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+多模态功能已验证文字与图片的真实 Flash API 调用、24×32 混合输入矩阵逐单元一致性，以及浏览器上传、预览、应用配置与模拟实验流程。实际风洞运行需结合目标设备完成串口、探针与热线仪联调和标定。
+
+## 电机自然语言控制模块
 
 给王凯串口程序对接前使用的小模块：自然语言 → LangGraph 解析节点 → Pydantic 校验 → 单行 JSON → 模拟接收端再次校验 → 模拟 ACK。
 
@@ -104,13 +202,13 @@ uv run python motor_agent.py --mode llm --interactive
 ## 大模型模式（可选）
 
 ```bash
-uv sync --extra llm
+uv sync
 export DEEPSEEK_API_KEY='你的 DeepSeek API 密钥'
-export DEEPSEEK_MODEL='deepseek-chat'
+export DEEPSEEK_MODEL='deepseek-flash'
 uv run python motor_agent.py --mode llm '请让马达逆时针转90度'
 ```
 
-程序通过 LangChain `ChatOpenAI` 的 OpenAI 兼容接口请求 DeepSeek（`https://api.deepseek.com`），并用 `with_structured_output` 产生结构化候选，再交给独立校验节点。`.env.example` 只是模板，程序不自动读取 `.env`。不要提交真实密钥。模型需要支持工具调用。LLM 可能误解语义，数值校验不能证明它理解正确，因此本项目即使在 LLM 模式也只模拟，正式硬件执行前必须增加人工确认。
+程序通过 LangChain `ChatOpenAI` 的 OpenAI 兼容接口请求 DeepSeek（`https://api.deepseek.com`），并用 `with_structured_output` 产生结构化候选，再交给独立校验节点。程序自动读取项目根目录的 `.env`，可从 `.env.example` 复制配置。不要提交真实密钥。模型需要支持工具调用。LLM 可能误解语义，数值校验不能证明它理解正确，电机模块在 LLM 模式下采用模拟接收，正式硬件执行前必须增加人工确认。
 LLM 模式还会先检查输入是否包含明显的电机控制意图；例如“今天天气怎么样”会直接拒绝，不会被模型转换成零度指令。
 
 ## 第一版暂定 JSON 协议
@@ -134,7 +232,7 @@ LLM 模式还会先检查输入是否包含明显的电机控制意图；例如�
 ## 中文代码阅读说明
 
 主程序和测试文件已经补充中文注释，包含模块用途、函数职责、数据流及关键语法。
-第一次阅读建议先看 [代码与语法导读](代码与语法导读.md)，再从 `motor_agent.py` 底部的 `main()` 沿调用关系阅读。
+第一次阅读建议先看 [解析器说明](README_PHARSER.md)，再从 `motor_agent.py` 底部的 `main()` 沿调用关系阅读。
 这些说明不改变程序运行逻辑，当前仍然只模拟接收，不打开串口。
 
 ## 等王凯确认

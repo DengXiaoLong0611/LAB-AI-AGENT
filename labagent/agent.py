@@ -1,10 +1,6 @@
 """ReAct 决策入口。离线基线与 DeepSeek 共享工具和实验约束。"""
 
 import json
-import os
-from pathlib import Path
-
-from dotenv import load_dotenv
 
 from .models import (
     AdjustmentArgs,
@@ -172,14 +168,13 @@ class ModelPolicy:
 def make_deepseek_policy():
     from langchain_openai import ChatOpenAI
 
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-    key = os.getenv("DEEPSEEK_API_KEY")
-    if not key:
-        raise ValueError("DeepSeek 模式需要 DEEPSEEK_API_KEY")
+    from .inputs import model_settings
+
+    settings = model_settings()
+    if not settings["api_key"]:
+        raise ValueError("模型模式需要 DEEPSEEK_API_KEY 或 TEXT_API_KEY")
     model = ChatOpenAI(
-        model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-        api_key=key,
-        base_url="https://api.deepseek.com",
+        **settings,
         temperature=0,
         timeout=40,
         max_retries=0,

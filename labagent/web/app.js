@@ -43,6 +43,14 @@ function App() {
   const [debugResult,setDebugResult] = useState(null);
   const [memories,setMemories] = useState([]);
   const [query,setQuery] = useState('');
+  const [requestText,setRequestText] = useState('');
+  const [attachments,setAttachments] = useState([]);
+  const [inputModel,setInputModel] = useState('auto');
+  const [inputModels,setInputModels] = useState(null);
+  const [matrixOrigin,setMatrixOrigin] = useState('bottom');
+  const [parsedRequest,setParsedRequest] = useState(null);
+  const [parsedConfig,setParsedConfig] = useState('');
+  const [appliedRequest,setAppliedRequest] = useState(false);
 
   async function refresh() {
     const list = await api('/api/tasks');
@@ -51,6 +59,7 @@ function App() {
   }
   useEffect(() => {
     api('/api/example').then(setConfig).catch(e=>setError(e.message));
+    api('/api/input-models').then(setInputModels).catch(e=>setError(e.message));
   },[]);
   useEffect(() => {
     let alive=true;
@@ -109,6 +118,64 @@ function App() {
       setMemories(await api('/api/memories?'+params));
     });
   }
+  function invalidateRequest() { setParsedRequest(null);setAppliedRequest(false); }
+  async function selectAttachments(event) {
+    const files=Array.from(event.target.files || []);
+    event.target.value='';
+    await perform(async()=>{
+      if (files.length>5 || files.some(file=>file.size>8*1024*1024) || files.reduce((sum,file)=>sum+file.size,0)>16*1024*1024)
+        throw new Error('最多 5 个附件，每个最多 8 MB，合计最多 16 MB');
+      const loaded=await Promise.all(files.map(file=>new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve({name:file.name,data_base64:String(reader.result).split(',')[1],
+          preview:file.type.startsWith('image/')?String(reader.result):null});
+        reader.onerror=()=>reject(new Error(`无法读取 ${file.name}`));
+        reader.readAsDataURL(file);
+      })));
+      setAttachments(loaded);invalidateRequest();
+    });
+  }
+  async function parseInput() {
+    await perform(async()=>{
+      setParsedRequest(null);setAppliedRequest(false);
+      const result=await api('/api/requests/parse',{method:'POST',body:pretty({config,text:requestText,
+        attachments:attachments.map(({name,data_base64})=>({name,data_base64})),model:inputModel,matrix_origin:matrixOrigin})});
+      setParsedRequest(result);setParsedConfig(pretty(config));
+    });
+  }
+  function requestEditor() {
+    const stale=parsedRequest && parsedConfig!==pretty(config) && !appliedRequest;
+    return h('div',{className:'request-editor'},
+      h('h3',null,'多模态风场请求'),
+      h('label',{className:'field'},h('span',null,'文字描述 · 可配合表格或图片'),
+        h('textarea',{rows:3,value:requestText,disabled:busy,placeholder:'例如：参考图片的剖面，底部 2 m/s，顶部 8 m/s。',
+          onChange:e=>{setRequestText(e.target.value);invalidateRequest();}})),
+      h('label',{className:'field'},h('span',null,'上传表格或图片'),
+        h('input',{type:'file',multiple:true,disabled:busy,accept:'.xlsx,.xls,.csv,.tsv,.png,.jpg,.jpeg,.webp,.gif',onChange:selectAttachments})),
+      h('p',{className:'muted'},'支持 Excel / CSV / TSV 与图片，最多 5 个，每个 8 MB。纯数值矩阵须与阵列行列数一致，单位 m/s。'),
+      attachments.length>0 && h('ul',{className:'attachment-list'},attachments.map((file,index)=>
+        h('li',{key:index},file.preview && h('img',{src:file.preview,alt:file.name}),h('span',null,file.name),
+          h(Button,{disabled:busy,onClick:()=>{setAttachments(old=>old.filter((_,i)=>i!==index));invalidateRequest();}},'移除')))),
+      h('div',{className:'form-grid'},
+        h('label',{className:'field'},h('span',null,'解析模型'),h('select',{value:inputModel,disabled:busy,
+          onChange:e=>{setInputModel(e.target.value);invalidateRequest();}},
+          h('option',{value:'auto'},'自动 · 图片使用视觉模型'),h('option',{value:'text'},'文本模型 · 文字与表格'),
+          h('option',{value:'vision'},'视觉模型'))),
+        h('label',{className:'field'},h('span',null,'矩阵第一行对应位置'),h('select',{value:matrixOrigin,disabled:busy,
+          onChange:e=>{setMatrixOrigin(e.target.value);invalidateRequest();}},
+          h('option',{value:'bottom'},'底部 · y = 0'),h('option',{value:'top'},'顶部 · 图片阅读顺序')))),
+      inputModels && h('p',{className:'muted'},`文本 ${inputModels.text.model} · 视觉 ${inputModels.vision.model}`),
+      h(Button,{kind:'primary',disabled:busy || (!requestText.trim() && !attachments.length),onClick:parseInput},busy?'处理中…':'解析并预览风场'),
+      parsedRequest && h('div',{className:'request-preview'},
+        h('p',null,parsedRequest.summary),h('p',{className:'muted'},`解析来源 ${parsedRequest.model}`),
+        parsedRequest.warnings.length>0 && h('ul',null,parsedRequest.warnings.map((warning,i)=>h('li',{key:i},warning))),
+        fieldPreview(parsedRequest.field_mps),
+        h(JsonDetail,{title:'生成的原语 JSON',value:parsedRequest.spec}),
+        stale && h('p',{role:'status'},'实验配置已变化，请重新解析以更新预览。'),
+        h(Button,{disabled:busy || stale || appliedRequest,onClick:()=>{
+          setConfig(parsedRequest.config);setAdvanced(pretty(parsedRequest.config));setAppliedRequest(true);
+        }},appliedRequest?'已应用到实验配置':'应用到实验配置')));
+  }
   if (!config) return h('main',{className:'loading'},error || '正在载入本地实验平台…');
   const state=task?.state || {};
   const analysis=state.analysis;
@@ -123,12 +190,13 @@ function App() {
       h('div',{className:'section-heading'},h('div',null,h('small',null,'EXPERIMENT DESIGN'),h('h2',null,'配置目标风场')),
         h('span',{className:'badge'},'新实验')),
       h('form',{onSubmit:start},
+        requestEditor(),
         h(Field,{label:'实验名称',value:config.name,onChange:v=>change('name',v)}),
         h('label',{className:'field'},h('span',null,'实验介绍与已有进展'),
           h('textarea',{rows:2,value:config.description,onChange:e=>change('description',e.target.value)})),
         h('div',{className:'form-grid'},
           h('label',{className:'field'},h('span',null,'决策模式'),h('select',{value:config.mode,onChange:e=>change('mode',e.target.value)},
-            h('option',{value:'baseline'},'离线反馈基线'),h('option',{value:'deepseek'},'DeepSeek ReAct'))),
+            h('option',{value:'baseline'},'离线反馈基线'),h('option',{value:'deepseek'},'文本模型 ReAct'))),
           h(Field,{label:'风速允许误差 · m/s',type:'number',step:0.01,min:0.01,value:config.tolerance_mps,onChange:v=>change('tolerance_mps',v)}),
           h(Field,{label:'最大轮数',type:'number',min:1,value:config.max_iterations,onChange:v=>change('max_iterations',v)}),
           h(Field,{label:'稳定等待 · s',type:'number',step:0.1,min:0,value:config.settle_seconds,onChange:v=>change('settle_seconds',v)})),
@@ -235,6 +303,18 @@ function App() {
       error && h('div',{className:'error-box',role:'alert'},error,h(Button,{onClick:()=>setError('')},'关闭')),
       h('div',{className:tab==='experiment'?'workspace-grid':''},tab==='experiment'?experiment():tab==='tools'?toolsPanel():memoryPanel()),
       h('footer',null,'LabAgent · 操作记录 / 测量证据 / 可复现实验')));
+}
+function fieldPreview(field) {
+  const rows=field.length, columns=field[0].length;
+  const maximum=Math.max(0.01,...field.flat());
+  return h('figure',{className:'field-preview'},
+    h('div',{className:'field-grid',role:'img','aria-label':`${rows} 行 ${columns} 列目标风速热图`,
+      style:{gridTemplateColumns:`repeat(${columns},1fr)`}},
+      field.slice().reverse().flatMap((row,index)=>row.map((value,x)=>h('div',{
+        key:`${index}-${x}`,title:`x=${x}, y=${rows-1-index} · ${number(value)} m/s`,
+        style:{backgroundColor:`hsl(${205-value/maximum*170},65%,${90-value/maximum*50}%)`}
+      })))),
+    h('figcaption',null,`顶部 y=${rows-1} ↑ · 底部 y=0 · 左 x=0 → 右 x=${columns-1} · 0–${number(maximum,2)} m/s`));
 }
 function metric(label,value) {return h('div',{className:'metric',key:label},h('span',null,label),h('strong',null,value));}
 function resultTable(points) {

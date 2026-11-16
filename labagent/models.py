@@ -185,7 +185,7 @@ Primitive = Annotated[
 
 
 class FanArgs(Contract):
-    spec: list[Primitive] = Field(min_length=1, max_length=300)
+    spec: list[Primitive] = Field(min_length=1, max_length=4096)
 
 
 class EmptyArgs(Contract):
